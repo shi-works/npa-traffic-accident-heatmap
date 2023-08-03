@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>警察庁 交通事故ヒートマップ（PMTiles）</title>
+    <meta property="og:description" content="Visualize earthquake frequency by location using a heatmap layer." />
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel='stylesheet' href='https://unpkg.com/maplibre-gl@3.2.1/dist/maplibre-gl.css' />
+    <script src='https://unpkg.com/maplibre-gl@3.2.1/dist/maplibre-gl.js'></script>
+    <script src="https://unpkg.com/pmtiles@2.10.0/dist/index.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body,
+        #map {
+            height: 100%;
+        }
+
+        .legend {
+            background-color: #fff;
+            border-radius: 3px;
+            bottom: 50px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.10);
+            font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif;
+            padding: 10px;
+            position: absolute;
+            right: 10px;
+            z-index: 1;
+            line-height: 16px;
+            height: 60px;
+        }
+
+        .legend h4 {
+            margin: 0 0 10px;
+        }
+
+        .legend div span {
+            border-radius: 50%;
+            display: inline-block;
+            height: 15px;
+            margin-right: 10px;
+            width: 15px;
+            color: orangered
+        }
+
+        .circle {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="map"></div>
+    <div id='jiko-legend' class='legend'>
+        <h4>事故内容</h4>
+        <div class="circle" style='background-color: rgb(255, 0, 0);display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">死亡事故</span><br>
+        <div class="circle" style='background-color: rgb(0, 255, 255);display: inline-block;'></div>
+        <span style="display: inline-block; margin-left: 5px;">負傷事故</span><br>
+    </div>
+
+    <script>
+        // add the PMTiles plugin to the maplibregl global.
+        let protocol = new pmtiles.Protocol();
+        maplibregl.addProtocol("pmtiles", protocol.tile);
+        let PMTILES_JIKO_URL = "https://xs489works.xsrv.jp/pmtiles-data/traffic-accident/honhyo_2019-2022_convert.pmtiles";
+        const p = new pmtiles.PMTiles(PMTILES_JIKO_URL)
+        p.getMetadata().then((res) => console.log(res));
+        protocol.add(p);
+
+        const map = new maplibregl.Map({
+            container: 'map',
+            // style: 'https://tile2.openstreetmap.jp/styles/osm-bright/style.json',
+            // style: './building3dphoto.json',
+            style: './building3ddark.json',
+            center: [139.487748, 35.922752],
+            zoom: 4,
+            hash: true,
+            attributionControl: false
+        });
+
+        // ズーム・回転
+        map.addControl(new maplibregl.NavigationControl());
+
+        // フルスクリーンモードのオンオフ
+        map.addControl(new maplibregl.FullscreenControl());
+
+        // 現在位置表示
+        map.addControl(new maplibregl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: false
+            },
+            fitBoundsOptions: { maxZoom: 18 },
+            trackUserLocation: true,
+            showUserLocation: true
+        }));
+
+        // スケール表示
+        map.addControl(new maplibregl.ScaleControl({
+            maxWidth: 200,
+            unit: 'metric'
+        }));
+
+        // Attributionを折りたたみ表示
+        map.addControl(new maplibregl.AttributionControl({
+            compact: true,
+            customAttribution: '（<a href="https://twitter.com/syanseto" target="_blank">Twitter</a> | <a href="https://github.com/shi-works/traffic-accident-map" target="_blank">Github</a>） '
+        }));
+
+        map.on('load', () => {
+            // 交通事故データベクトルタイル（PMTiles）
+            map.addSource("pmtiles-jiko", {
+                type: "vector",
+                url: "pmtiles://" + PMTILES_JIKO_URL,
+                attribution: '<a href="https://www.npa.go.jp/publications/statistics/koutsuu/opendata/index_opendata.html">交通事故統計情報のオープンデータ（警察庁Webサイト）を加工して作成</a>'
+            });
+
+            map.addLayer({
+                'id': 'jiko-heatmap',
+                'type': 'heatmap',
+                "source": "pmtiles-jiko",
+                "source-layer": "honhyo_20192022_convertfgb",
+                'paint': {
+                    'heatmap-weight': 1,
+                    // 'heatmap-intensity': 2.5,
+                    'heatmap-intensity': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        0,
+                        1,
+                        9,
+                        3
+                    ],
+                    // 'heatmap-radius': 30,
+                    'heatmap-radius': [
+                        'interpolate',
+                        ['linear'],
+                        ['zoom'],
+                        0,
+                        2,
+                        9,
+                        30
+                    ],
+                    'heatmap-opacity': 0.5,
+                }
+            });
+
+            map.addLayer({
+                'id': 'jiko-circle-1',
+                'type': 'circle',
+                "source": "pmtiles-jiko",
+                "source-layer": "honhyo_20192022_convertfgb",
+                minzoom: 12,
+                maxzoom: 23,
+                'paint': {
+                    'circle-color': [
+                        'match',
+                        ['get', '事故内容'],
+                        '死亡事故', 'rgba(255, 0, 0, 1)',
+                        '負傷事故', 'rgba(0, 255, 255, 1)',
+                        'rgba(255, 255, 255, 1)'
+                    ],
+                    'circle-radius': 18,
+                    'circle-blur': 2.5,
+                    'circle-opacity': 0.6
+                }
+            });
+
+            map.addLayer({
+                'id': 'jiko-circle-2',
+                'type': 'circle',
+                "source": "pmtiles-jiko",
+                "source-layer": "honhyo_20192022_convertfgb",
+                minzoom: 12,
+                maxzoom: 23,
+                'paint': {
+                    'circle-color': [
+                        'match',
+                        ['get', '事故内容'],
+                        '死亡事故', 'rgba(255, 0, 0, 1)',
+                        '負傷事故', 'rgba(0, 255, 255, 1)',
+                        'rgba(255, 255, 255, 1)'
+                    ],
+                    'circle-radius': 9,
+                    'circle-blur': 1.5,
+                    'circle-opacity': 0.8
+                }
+            });
+
+            map.addLayer({
+                'id': 'jiko-circle-3',
+                'type': 'circle',
+                "source": "pmtiles-jiko",
+                "source-layer": "honhyo_20192022_convertfgb",
+                minzoom: 12,
+                maxzoom: 23,
+                'paint': {
+                    'circle-color': 'rgba(255, 255, 255, 1)',
+                    'circle-radius': 1,
+                    'circle-blur': 0,
+                    'circle-opacity': 1
+                }
+            });
+
+        });
+    </script>
+</body>
+
+</html>
